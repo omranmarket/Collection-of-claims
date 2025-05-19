@@ -1,0 +1,1342 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>سیستم مدیریت مطالبات</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.0.5/Vazirmatn-font-face.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Vazirmatn', sans-serif;
+      direction: rtl;
+      background-color: #f3f4f6;
+      margin: 0;
+      padding: 1rem;
+    }
+    .no-scroll {
+      overflow: hidden;
+    }
+    .card {
+      background: #fff;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .btn-primary {
+      background: #1e40af;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+    .btn-secondary {
+      background: #059669;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+    }
+    .btn-secondary:hover {
+      background: #047857;
+    }
+    .btn-cancel {
+      background: #ef4444;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      transition: background 0.2s;
+    }
+    .btn-cancel:hover {
+      background: #dc2626;
+    }
+    .close-button {
+      background: #ef4444;
+      color: #fff;
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      position: absolute;
+      top: 4px;
+      left: 4px;
+    }
+    .close-button:hover {
+      background: #dc2626;
+    }
+    input, select, textarea {
+      border: 1px solid #d1d5db;
+      border-radius: 0.375rem;
+      padding: 0.5rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .error-boundary {
+      background: #fee2e2;
+      color: #b91c1c;
+      padding: 1rem;
+      border-radius: 0.375rem;
+      text-align: center;
+    }
+    .chart-container {
+      max-width: 100%;
+      padding: 0.5rem;
+      text-align: center;
+    }
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: #ffffff;
+    }
+    th, td {
+      padding: 0.75rem;
+      text-align: right;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+      color: #1f2937;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      cursor: pointer;
+    }
+    th:hover {
+      background-color: #e2e8f0;
+    }
+    tr:nth-child(even) {
+      background-color: #f9fafb;
+    }
+    tr:hover {
+      background-color: #f1f5f9;
+    }
+    .sort-icon {
+      display: inline-block;
+      margin-left: 0.5rem;
+      transition: transform 0.2s;
+    }
+    .filter-container {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .dropdown-container {
+      position: relative;
+      z-index: 1000;
+      width: 50%; /* w-1/2 */
+    }
+    .dropdown-button {
+      background: #d1d5db; /* gray-300 */
+      color: #1f2937; /* gray-900 */
+      padding: 0.5rem;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s;
+      width: 100%;
+    }
+    .dropdown-button:hover {
+      background: #9ca3af; /* gray-400 */
+      transition: background 0.2s;
+    }
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #f9fafb; /* gray-50 */
+      border: 1px solid #d1d5db; /* gray-300 */
+      border-radius: 0.375rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 1001;
+      width: 100%;
+    }
+    .dropdown-item {
+      padding: 0.5rem 1rem;
+      color: #1f2937; /* gray-900 */
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .dropdown-item:hover {
+      background: #e5e7eb; /* gray-200 */
+      transition: background 0.2s;
+    }
+    .dropdown-item.selected {
+      background: #e5e7eb; /* gray-200 */
+    }
+    .chips-container {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      background: #6b7280; /* gray-500 */
+      color: #ffffff;
+      padding: 0.25rem 0.5rem;
+      border-radius: 1rem;
+      font-size: 0.875rem;
+      min-width: fit-content;
+      flex-shrink: 0;
+    }
+    .chip svg {
+      cursor: pointer;
+      margin-left: 0.25rem;
+      stroke: #ffffff;
+    }
+    .chip svg:hover {
+      stroke: #d1d5db; /* gray-300 */
+    }
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(31, 41, 55, 0.75);
+      z-index: 2000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background-color: #fff;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+      position: relative;
+      transform: scale(0.95);
+      opacity: 0;
+      animation: modal-enter 0.3s ease forwards;
+      z-index: 2001;
+    }
+    .modal-content::-webkit-scrollbar {
+      width: 8px;
+    }
+    .modal-content::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+      background: #6b7280;
+      border-radius: 4px;
+    }
+    .modal-content::-webkit-scrollbar-thumb:hover {
+      background: #4b5563;
+    }
+    @keyframes modal-enter {
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+    .modal-content.closing {
+      animation: modal-exit 0.3s ease forwards;
+    }
+    @keyframes modal-exit {
+      to {
+        transform: scale(0.95);
+        opacity: 0;
+      }
+    }
+    @media (max-width: 640px) {
+      .card { padding: 0.5rem; }
+      .chart-container { padding: 0.25rem; }
+      input, select, textarea { font-size: 0.875rem; }
+      th, td { font-size: 0.875rem; padding: 0.5rem; }
+      .filter-container { flex-direction: column; gap: 0.5rem; align-items: stretch; }
+      .dropdown-container { width: 100%; }
+      .dropdown-button, .dropdown-menu { width: 100%; }
+      .chips-container { flex-direction: row; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    console.log('اپلیکیشن لود شد');
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    const ErrorBoundary = ({ children }) => {
+      const [error, setError] = useState(null);
+      if (error) {
+        console.error('ErrorBoundary:', error);
+        return (
+          <div className="error-boundary">
+            <h2>خطایی رخ داد</h2>
+            <p>{error}</p>
+            <p>لطفاً صفحه را رفرش کنید یا با پشتیبانی تماس بگیرید。</p>
+          </div>
+        );
+      }
+      try {
+        return children;
+      } catch (e) {
+        setError(e.message);
+        return null;
+      }
+    };
+
+    const MultiSelectDropdown = ({ label, options, selectedValues, onChange }) => {
+      const [isOpen, setIsOpen] = useState(false);
+      const dropdownRef = useRef(null);
+
+      const allOption = { value: 'all', label: 'همه' };
+      const optionsWithAll = [allOption, ...options];
+
+      const handleOptionChange = (value) => {
+        let newSelected;
+        if (value === 'all') {
+          newSelected = options.map(opt => opt.value);
+        } else {
+          newSelected = selectedValues.includes(value)
+            ? selectedValues.filter(v => v !== value && v !== 'all')
+            : [...selectedValues.filter(v => v !== 'all'), value];
+        }
+        onChange(newSelected);
+        console.log('انتخاب‌ها تغییر کرد:', { label, selected: newSelected });
+      };
+
+      useEffect(() => {
+        const handleClickOutside = (event) => {
+          if (!dropdownRef.current || dropdownRef.current.contains(event.target)) {
+            return;
+          }
+          setIsOpen(false);
+          console.log('منوی کرکره‌ای بسته شد (کلیک بیرون):', label);
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+      }, [label]);
+
+      return (
+        <div className="dropdown-container" ref={dropdownRef}>
+          <div className="flex flex-col items-end gap-1">
+            <label className="text-sm font-medium text-gray-700">{label}</label>
+            <div
+              className="dropdown-button"
+              onClick={() => {
+                setIsOpen(!isOpen);
+                console.log('منوی کرکره‌ای:', label, isOpen ? 'بسته' : 'باز');
+              }}
+            >
+              <span>{selectedValues.length > 0 ? `${selectedValues.length} انتخاب‌شده` : `انتخاب ${label}`}</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          {selectedValues.filter(v => v !== 'all').length > 0 && (
+            <div className="chips-container">
+              {selectedValues.filter(v => v !== 'all').map(value => (
+                <span key={value} className="chip">
+                  {options.find(opt => opt.value === value)?.label || value}
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    onClick={() => handleOptionChange(value)}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </span>
+              ))}
+            </div>
+          )}
+          {isOpen && (
+            <div className="dropdown-menu">
+              {optionsWithAll.map(option => (
+                <div
+                  key={option.value}
+                  className={`dropdown-item ${selectedValues.includes(option.value) ? 'selected' : ''}`}
+                  onClick={() => handleOptionChange(option.value)}
+                >
+                  {option.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const ExpertPerformanceChart = ({ experts, claims, selectedExperts, selectedStatuses }) => {
+      const statusChartRef = useRef(null);
+      const amountChartRef = useRef(null);
+      const delayChartRef = useRef(null);
+      const chartInstanceRef = useRef({ status: null, amount: null, delay: null });
+
+      const calculateDelay = useCallback((dueDate) => {
+        try {
+          const today = new Date();
+          const due = new Date(dueDate);
+          const diffDays = Math.ceil((today - due) / (1000 * 60 * 60 * 24));
+          return {
+            days: diffDays > 0 ? diffDays : 0,
+            text: diffDays > 0 ? `${diffDays} روز دیرکرد` : diffDays < 0 ? `${Math.abs(diffDays)} روز تا سررسید` : 'سررسید امروز',
+            class: diffDays > 0 ? 'text-red-600' : 'text-gray-900'
+          };
+        } catch (e) {
+          console.error('خطا در محاسبه دیرکرد:', e);
+          return { days: 0, text: 'خطا', class: 'text-gray-900' };
+        }
+      }, []);
+
+      const filteredClaims = useMemo(() => {
+        let result = [...claims];
+        if (selectedExperts.length > 0 && !selectedExperts.includes('all')) {
+          result = result.filter(claim => {
+            const isMatch = selectedExperts.includes(String(claim.expertId));
+            console.log('فیلتر نمودار - بررسی مطالبه:', {
+              claimId: claim.id,
+              expertId: claim.expertId,
+              selectedExperts,
+              isMatch
+            });
+            return isMatch;
+          });
+          console.log('فیلتر کارشناسان در نمودار:', {
+            selectedExperts,
+            filteredCount: result.length,
+            claimIds: result.map(c => c.id)
+          });
+        }
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes('all')) {
+          result = result.filter(claim => selectedStatuses.includes(claim.status));
+          console.log('فیلتر وضعیت‌ها در نمودار:', {
+            selectedStatuses,
+            filteredCount: result.length
+          });
+        }
+        return result;
+      }, [claims, selectedExperts, selectedStatuses]);
+
+      const performanceData = useMemo(() => {
+        return experts.map(expert => {
+          const expertClaims = filteredClaims.filter(claim => String(claim.expertId) === String(expert.id) && claim.status === 'در حال پیگیری');
+          const statusCounts = { 'در حال پیگیری': 0 };
+          let totalDelayDays = 0;
+
+          expertClaims.forEach(claim => {
+            statusCounts['در حال پیگیری']++;
+            const delayInfo = calculateDelay(claim.dueDate);
+            totalDelayDays += delayInfo.days;
+          });
+
+          const totalAmount = expertClaims.reduce((sum, claim) => sum + claim.amount, 0);
+          console.log(`محاسبه داده‌ها برای ${expert.name} (در حال پیگیری):`, {
+            expertId: expert.id,
+            totalAmount,
+            claimCount: expertClaims.length,
+            totalDelayDays,
+            claimIds: expertClaims.map(c => c.id)
+          });
+
+          return {
+            expertId: expert.id,
+            expertName: expert.name,
+            totalAmount,
+            totalCount: expertClaims.length,
+            statusCounts,
+            totalDelayDays
+          };
+        }).filter(data => data.totalCount > 0);
+      }, [experts, filteredClaims, calculateDelay]);
+
+      const totalCount = useMemo(() => {
+        return performanceData.reduce((sum, data) => sum + data.totalCount, 0);
+      }, [performanceData]);
+
+      const totalAmount = useMemo(() => {
+        return performanceData.reduce((sum, data) => sum + data.totalAmount, 0);
+      }, [performanceData]);
+
+      const totalDelayDaysAll = useMemo(() => {
+        return performanceData.reduce((sum, data) => sum + data.totalDelayDays, 0);
+      }, [performanceData]);
+
+      useEffect(() => {
+        if (!performanceData.length) return;
+
+        const colors = [
+          'rgba(75, 192, 192, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(54, 162, 235, 0.5)',
+          'rgba(255, 206, 86, 0.5)', 'rgba(153, 102, 255, 0.5)', 'rgba(255, 159, 64, 0.5)',
+          'rgba(199, 199, 199, 0.5)', 'rgba(83, 102, 255, 0.5)', 'rgba(255, 99, 255, 0.5)',
+          'rgba(60, 179, 113, 0.5)'
+        ];
+        console.log('رنگ‌های تخصیص‌یافته:', colors.slice(0, performanceData.length));
+
+        const statusDataset = {
+          label: 'تعداد مطالبات',
+          data: performanceData.map(data => data.totalCount),
+          backgroundColor: colors.slice(0, performanceData.length),
+          borderColor: colors.slice(0, performanceData.length).map(c => c.replace('0.5', '1')),
+          borderWidth: 1,
+        };
+
+        const amountDataset = {
+          label: 'مبلغ کل',
+          data: performanceData.map(data => data.totalAmount),
+          backgroundColor: colors.slice(0, performanceData.length),
+          borderColor: colors.slice(0, performanceData.length).map(c => c.replace('0.5', '1')),
+          borderWidth: 1,
+        };
+
+        const delayDataset = {
+          label: 'جمع روزهای دیرکرد',
+          data: performanceData.map(data => data.totalDelayDays),
+          backgroundColor: colors.slice(0, performanceData.length),
+          borderColor: colors.slice(0, performanceData.length).map(c => c.replace('0.5', '1')),
+          borderWidth: 1,
+        };
+
+        if (statusChartRef.current) {
+          if (chartInstanceRef.current.status) chartInstanceRef.current.status.destroy();
+          chartInstanceRef.current.status = new Chart(statusChartRef.current, {
+            type: 'pie',
+            data: {
+              labels: performanceData.map(data => data.expertName),
+              datasets: [statusDataset],
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: 'top' },
+              },
+            },
+          });
+        }
+
+        if (amountChartRef.current) {
+          if (chartInstanceRef.current.amount) chartInstanceRef.current.amount.destroy();
+          chartInstanceRef.current.amount = new Chart(amountChartRef.current, {
+            type: 'pie',
+            data: {
+              labels: performanceData.map(data => data.expertName),
+              datasets: [amountDataset],
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: 'top' },
+              },
+            },
+          });
+        }
+
+        if (delayChartRef.current) {
+          if (chartInstanceRef.current.delay) chartInstanceRef.current.delay.destroy();
+          chartInstanceRef.current.delay = new Chart(delayChartRef.current, {
+            type: 'pie',
+            data: {
+              labels: performanceData.map(data => data.expertName),
+              datasets: [delayDataset],
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: 'top' },
+              },
+            },
+          });
+        }
+
+        return () => {
+          if (chartInstanceRef.current.status) chartInstanceRef.current.status.destroy();
+          if (chartInstanceRef.current.amount) chartInstanceRef.current.amount.destroy();
+          if (chartInstanceRef.current.delay) chartInstanceRef.current.delay.destroy();
+        };
+      }, [performanceData]);
+
+      return (
+        <div className="card">
+          <h2 className="text-xl font-bold mb-4">گزارش عملکرد (نمودار)</h2>
+          {performanceData.length ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="chart-container text-center">
+                  <canvas ref={statusChartRef}></canvas>
+                  <h3 className="text-lg font-semibold mt-2">تعداد مطالبات</h3>
+                  <div className="text-center mt-2">
+                    <p className="text-gray-700">تعداد کل: {totalCount.toLocaleString('fa-IR')}</p>
+                  </div>
+                </div>
+                <div className="chart-container text-center">
+                  <canvas ref={amountChartRef}></canvas>
+                  <h3 className="text-lg font-semibold mt-2">مبلغ کل مطالبات</h3>
+                  <div className="text-center mt-2">
+                    <p className="text-gray-700">مبلغ کل: {totalAmount.toLocaleString('fa-IR')} ریال</p>
+                  </div>
+                </div>
+                <div className="chart-container text-center">
+                  <canvas ref={delayChartRef}></canvas>
+                  <h3 className="text-lg font-semibold mt-2">دیرکرد مطالبات</h3>
+                  <div className="text-center mt-2">
+                    <p className="text-gray-700">جمع روزهای دیرکرد: {totalDelayDaysAll.toLocaleString('fa-IR')} روز</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-600">داده‌ای برای نمایش وجود ندارد.</p>
+          )}
+        </div>
+      );
+    };
+
+    const App = () => {
+      const [claims, setClaims] = useState(() => {
+        try {
+          const saved = localStorage.getItem('claims');
+          const parsed = saved ? JSON.parse(saved) : [];
+          console.log('بارگذاری مطالبات:', parsed.length);
+          return parsed.map(c => ({ ...c, expertId: String(c.expertId) }));
+        } catch (e) {
+          console.error('خطا در بارگذاری مطالبات:', e);
+          return [];
+        }
+      });
+      const [experts, setExperts] = useState(() => {
+        try {
+          const saved = localStorage.getItem('experts');
+          const parsed = saved ? JSON.parse(saved) : [];
+          console.log('بارگذاری کارشناسان:', parsed.length);
+          return parsed.map(e => ({ ...e, id: String(e.id) }));
+        } catch (e) {
+          console.error('خطا در بارگذاری کارشناسان:', e);
+          return [];
+        }
+      });
+      const [isExpertsOpen, setIsExpertsOpen] = useState(false);
+      const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+      const [currentClaim, setCurrentClaim] = useState(null);
+      const [selectedExperts, setSelectedExperts] = useState([]);
+      const [selectedStatuses, setSelectedStatuses] = useState([]);
+      const claimFormRef = useRef(null);
+      const expertFormRef = useRef(null);
+
+      const statusOptions = [
+        { value: 'در حال پیگیری', label: 'در حال پیگیری' },
+        { value: 'معوق', label: 'معوق' },
+        { value: 'سوخت‌شده', label: 'سوخت‌شده' },
+        { value: 'پرداخت‌شده', label: 'پرداخت‌شده' }
+      ];
+
+      const expertOptions = experts.map(expert => ({
+        value: String(expert.id),
+        label: expert.name
+      }));
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('claims', JSON.stringify(claims));
+          localStorage.setItem('experts', JSON.stringify(experts));
+          console.log('ذخیره‌سازی:', { claims: claims.length, experts: experts.length });
+        } catch (e) {
+          console.error('خطا در ذخیره‌سازی:', e);
+          alert('خطا در ذخیره داده‌ها');
+        }
+      }, [claims, experts]);
+
+      useEffect(() => {
+        if (currentClaim) {
+          document.body.classList.add('no-scroll');
+          console.log('اسکرول صفحه غیرفعال شد');
+        } else {
+          document.body.classList.remove('no-scroll');
+          console.log('اسکرول صفحه فعال شد');
+        }
+        return () => {
+          document.body.classList.remove('no-scroll');
+        };
+      }, [currentClaim]);
+
+      const calculateDelay = useCallback((dueDate) => {
+        try {
+          const today = new Date();
+          const due = new Date(dueDate);
+          const diffDays = Math.ceil((today - due) / (1000 * 60 * 60 * 24));
+          return {
+            days: diffDays > 0 ? diffDays : 0,
+            text: diffDays > 0 ? `${diffDays} روز دیرکرد` : diffDays < 0 ? `${Math.abs(diffDays)} روز تا سررسید` : 'سررسید امروز',
+            class: diffDays > 0 ? 'text-red-600' : 'text-gray-900'
+          };
+        } catch (e) {
+          console.error('خطا در محاسبه دیرکرد:', e);
+          return { days: 0, text: 'خطا', class: 'text-gray-900' };
+        }
+      }, []);
+
+      const getLastFollowUp = useCallback((followUps) => {
+        try {
+          if (!followUps || followUps.length === 0) {
+            return { date: 'بدون پیگیری', note: 'بدون پیگیری', isOverdue: true };
+          }
+          const lastFollowUp = followUps[followUps.length - 1];
+          const followUpDate = new Date(lastFollowUp.date.split('/').reverse().join('-'));
+          const timeDiff = Date.now() - followUpDate.getTime();
+          const isOverdue = timeDiff > 24 * 60 * 60 * 1000;
+          return {
+            date: lastFollowUp.date,
+            note: lastFollowUp.note,
+            isOverdue
+          };
+        } catch (e) {
+          console.error('خطا در دریافت آخرین پیگیری:', e);
+          return { date: 'خطا', note: 'خطا در بارگذاری', isOverdue: true };
+        }
+      }, []);
+
+      const getExpertName = useCallback((expertId) => {
+        const expert = experts.find(e => String(e.id) === String(expertId));
+        if (!expert) {
+          console.warn('کارشناس یافت نشد:', { expertId, availableIds: experts.map(e => e.id) });
+          return 'کارشناس نامعتبر';
+        }
+        return expert.name;
+      }, [experts]);
+
+      const addClaim = useCallback((e) => {
+        e.preventDefault();
+        try {
+          const { customerName, amount, dueDate, expertId } = claimFormRef.current;
+          if (!customerName.value || !amount.value || !dueDate.value || !expertId.value) {
+            alert('تمامی فیلدها را پر کنید.');
+            return;
+          }
+          const selectedExpert = experts.find(e => String(e.id) === String(expertId.value));
+          if (!selectedExpert) {
+            alert('کارشناس انتخاب‌شده معتبر نیست.');
+            return;
+          }
+          const newClaim = {
+            id: Date.now(),
+            customerName: customerName.value,
+            amount: parseFloat(amount.value),
+            dueDate: dueDate.value,
+            createdDate: new Date().toLocaleDateString('fa-IR'),
+            expertId: String(expertId.value),
+            status: 'در حال پیگیری',
+            followUps: [],
+          };
+          setClaims(prev => [...prev, newClaim]);
+          console.log('مطالبه جدید:', newClaim);
+          claimFormRef.current.reset();
+        } catch (e) {
+          console.error('خطا در افزودن مطالبه:', e);
+          alert('خطا در افزودن مطالبه');
+        }
+      }, [experts]);
+
+      const addFollowUp = useCallback((claimId, followUp) => {
+        try {
+          setClaims(claims.map(claim =>
+            claim.id === claimId && claim.status === 'در حال پیگیری'
+              ? { ...claim, followUps: [...claim.followUps, { ...followUp, date: new Date().toLocaleDateString('fa-IR') }] }
+              : claim
+          ));
+          console.log('پیگیری جدید اضافه شد برای مطالبه:', claimId);
+        } catch (e) {
+          console.error('خطا در افزودن پیگیری:', e);
+          alert('خطا در افزودن پیگیری');
+        }
+      }, [claims]);
+
+      const changeStatus = useCallback((claimId, newStatus) => {
+        try {
+          setClaims(claims.map(claim =>
+            claim.id === claimId ? { ...claim, status: newStatus } : claim
+          ));
+          if (currentClaim && currentClaim.id === claimId) {
+            setCurrentClaim({ ...currentClaim, status: newStatus });
+          }
+          console.log('وضعیت تغییر کرد:', { claimId, newStatus });
+        } catch (e) {
+          console.error('خطا در تغییر وضعیت:', e);
+          alert('خطا در تغییر وضعیت');
+        }
+      }, [claims, currentClaim]);
+
+      const changeExpert = useCallback((claimId, newExpertId) => {
+        try {
+          if (!newExpertId) {
+            alert('لطفاً یک کارشناس انتخاب کنید.');
+            return;
+          }
+          const selectedExpert = experts.find(e => String(e.id) === String(newExpertId));
+          if (!selectedExpert) {
+            alert('کارشناس انتخاب‌شده معتبر نیست.');
+            return;
+          }
+          const expertIdStr = String(newExpertId);
+          const updatedClaims = claims.map(claim =>
+            claim.id === claimId ? { ...claim, expertId: expertIdStr } : claim
+          );
+          setClaims(updatedClaims);
+          if (currentClaim && currentClaim.id === claimId) {
+            const updatedClaim = updatedClaims.find(claim => claim.id === claimId);
+            setCurrentClaim(updatedClaim);
+          }
+          console.log('کارشناس تغییر کرد:', { claimId, newExpertId: expertIdStr });
+        } catch (e) {
+          console.error('خطا در تغییر کارشناس:', e);
+          alert('خطا در تغییر کارشناس');
+        }
+      }, [claims, currentClaim, experts]);
+
+      const deleteClaim = useCallback((claimId) => {
+        try {
+          const confirmed = window.confirm('آیا از حذف این مطالبه مطمئن هستید؟');
+          if (confirmed) {
+            setClaims(claims.filter(claim => claim.id !== claimId));
+            setCurrentClaim(null);
+            console.log('مطالبه حذف شد:', claimId);
+          } else {
+            console.log('حذف مطالبه لغو شد:', claimId);
+          }
+        } catch (e) {
+          console.error('خطا در حذف مطالبه:', e);
+          alert('خطا در حذف مطالبه');
+        }
+      }, [claims]);
+
+      const addExpert = useCallback((e) => {
+        e.preventDefault();
+        try {
+          const expertName = expertFormRef.current.expertName.value;
+          if (!expertName) {
+            alert('نام کارشناس را وارد کنید.');
+            return;
+          }
+          const newExpert = { id: String(Date.now()), name: expertName };
+          setExperts(prev => [...prev, newExpert]);
+          console.log('کارشناس جدید:', newExpert);
+          expertFormRef.current.reset();
+        } catch (e) {
+          console.error('خطا در افزودن کارشناس:', e);
+          alert('خطا در افزودن کارشناس');
+        }
+      }, []);
+
+      const exportToCSV = useCallback(() => {
+        try {
+          const expertMap = experts.reduce((map, expert) => ({ ...map, [expert.id]: expert.name }), {});
+          const headers = ['تاریخ ثبت', 'نام مشتری', 'مبلغ (ریال)', 'تاریخ سررسید', 'کارشناس', 'وضعیت', 'پیگیری‌ها'];
+          const rows = claims.map(claim => [
+            claim.createdDate,
+            claim.customerName,
+            claim.amount,
+            claim.dueDate,
+            expertMap[claim.expertId] || 'کارشناس نامعتبر',
+            claim.status,
+            claim.followUps.map(f => `${f.date}: ${f.note}`).join(' | ')
+          ]);
+          const csv = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
+          const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `claims_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+          console.log('CSV صادر شد:', rows.length, 'سطر');
+        } catch (e) {
+          console.error('خطا در صدور CSV:', e);
+          alert('خطا در صدور فایل CSV');
+        }
+      }, [claims, experts]);
+
+      const handleSort = useCallback((key) => {
+        try {
+          setSortConfig(prevConfig => {
+            const newDirection = prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc';
+            console.log('مرتب‌سازی ستون:', key, 'جهت:', newDirection);
+            return { key, direction: newDirection };
+          });
+        } catch (e) {
+          console.error('خطا در مرتب‌سازی:', e);
+        }
+      }, []);
+
+      const filteredClaims = useMemo(() => {
+        try {
+          let result = [...claims];
+          console.log('فیلتر کردن مطالبات - ورودی:', {
+            totalClaims: claims.length,
+            selectedExperts,
+            selectedStatuses
+          });
+          if (selectedExperts.length > 0 && !selectedExperts.includes('all')) {
+            result = result.filter(claim => {
+              const isMatch = selectedExperts.includes(String(claim.expertId));
+              console.log('فیلتر جدول - بررسی مطالبه:', {
+                claimId: claim.id,
+                expertId: claim.expertId,
+                selectedExperts,
+                isMatch
+              });
+              return isMatch;
+            });
+            console.log('فیلتر کارشناسان در جدول:', {
+              selectedExperts,
+              filteredCount: result.length,
+              claimIds: result.map(c => c.id)
+            });
+          }
+          if (selectedStatuses.length > 0 && !selectedStatuses.includes('all')) {
+            result = result.filter(claim => selectedStatuses.includes(claim.status));
+            console.log('فیلتر وضعیت‌ها در جدول:', {
+              selectedStatuses,
+              filteredCount: result.length,
+              claimIds: result.map(c => c.id)
+            });
+          }
+          return result;
+        } catch (e) {
+          console.error('خطا در فیلتر کردن مطالبات:', e);
+          return claims;
+        }
+      }, [claims, selectedExperts, selectedStatuses]);
+
+      const sortedClaims = useMemo(() => {
+        try {
+          const sorted = [...filteredClaims];
+          if (sortConfig.key) {
+            sorted.sort((a, b) => {
+              let valueA, valueB;
+              switch (sortConfig.key) {
+                case 'createdDate':
+                  valueA = new Date(a.createdDate.split('/').reverse().join('-')).getTime();
+                  valueB = new Date(b.createdDate.split('/').reverse().join('-')).getTime();
+                  return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
+                case 'expert':
+                  valueA = getExpertName(a.expertId);
+                  valueB = getExpertName(b.expertId);
+                  return sortConfig.direction === 'asc'
+                    ? valueA.localeCompare(valueB)
+                    : valueB.localeCompare(valueA);
+                case 'amount':
+                  valueA = a.amount;
+                  valueB = b.amount;
+                  return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
+                case 'lastFollowUpDate':
+                  valueA = getLastFollowUp(a.followUps).date === 'بدون پیگیری'
+                    ? 0
+                    : new Date(getLastFollowUp(a.followUps).date.split('/').reverse().join('-')).getTime();
+                  valueB = getLastFollowUp(b.followUps).date === 'بدون پیگیری'
+                    ? 0
+                    : new Date(getLastFollowUp(b.followUps).date.split('/').reverse().join('-')).getTime();
+                  return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
+                case 'lastFollowUpNote':
+                  valueA = getLastFollowUp(a.followUps).note || '';
+                  valueB = getLastFollowUp(b.followUps).note || '';
+                  return sortConfig.direction === 'asc'
+                    ? valueA.localeCompare(valueB)
+                    : valueB.localeCompare(valueA);
+                case 'delay':
+                  valueA = calculateDelay(a.dueDate).days;
+                  valueB = calculateDelay(b.dueDate).days;
+                  return sortConfig.direction === 'asc' ? valueA - valueB : valueB - valueA;
+                case 'status':
+                  valueA = a.status;
+                  valueB = b.status;
+                  return sortConfig.direction === 'asc'
+                    ? valueA.localeCompare(valueB)
+                    : valueB.localeCompare(valueA);
+                default:
+                  return 0;
+              }
+            });
+          }
+          console.log('مطالبات مرتب شدند:', sortConfig, 'تعداد ردیف‌ها:', sorted.length);
+          return sorted;
+        } catch (e) {
+          console.error('خطا در مرتب‌سازی مطالبات:', e);
+          return filteredClaims;
+        }
+      }, [filteredClaims, sortConfig, getExpertName, calculateDelay, getLastFollowUp]);
+
+      return (
+        <ErrorBoundary>
+          <div className="max-w-6xl mx-auto p-4 space-y-6">
+            <h1 className="text-2xl font-bold text-center">سیستم مدیریت مطالبات</h1>
+
+            <ExpertPerformanceChart
+              experts={experts}
+              claims={claims}
+              selectedExperts={selectedExperts}
+              selectedStatuses={selectedStatuses}
+            />
+
+            <div className="card">
+              <h2 className="text-xl font-bold mb-2">مطالبات</h2>
+              <div className="filter-container">
+                <MultiSelectDropdown
+                  label="وضعیت‌ها"
+                  options={statusOptions}
+                  selectedValues={selectedStatuses}
+                  onChange={setSelectedStatuses}
+                />
+                <MultiSelectDropdown
+                  label="کارشناسان"
+                  options={expertOptions}
+                  selectedValues={selectedExperts}
+                  onChange={setSelectedExperts}
+                />
+              </div>
+              <div className="table-container mt-6">
+                {sortedClaims.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th onClick={() => handleSort('createdDate')}>
+                          تاریخ ثبت
+                          {sortConfig.key === 'createdDate' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('expert')}>
+                          نام کارشناس
+                          {sortConfig.key === 'expert' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('amount')}>
+                          مبلغ (ریال)
+                          {sortConfig.key === 'amount' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('lastFollowUpDate')}>
+                          تاریخ آخرین پیگیری
+                          {sortConfig.key === 'lastFollowUpDate' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('lastFollowUpNote')}>
+                          نتیجه پیگیری
+                          {sortConfig.key === 'lastFollowUpNote' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('delay')}>
+                          میزان دیرکرد
+                          {sortConfig.key === 'delay' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort('status')}>
+                          وضعیت
+                          {sortConfig.key === 'status' && (
+                            <svg className="w-4 h-4 text-gray-500 sort-icon inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={sortConfig.direction === 'asc' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                            </svg>
+                          )}
+                        </th>
+                        <th>اقدام</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedClaims.map(claim => {
+                        const delayInfo = calculateDelay(claim.dueDate);
+                        const lastFollowUp = getLastFollowUp(claim.followUps);
+                        return (
+                          <tr key={claim.id}>
+                            <td>{claim.createdDate}</td>
+                            <td>{getExpertName(claim.expertId)}</td>
+                            <td>{Number(claim.amount).toLocaleString('fa-IR')}</td>
+                            <td className={lastFollowUp.isOverdue ? 'text-red-600' : 'text-gray-900'}>{lastFollowUp.date}</td>
+                            <td className={lastFollowUp.isOverdue ? 'text-red-600' : 'text-gray-900'}>{lastFollowUp.note}</td>
+                            <td className={delayInfo.class}>{delayInfo.text}</td>
+                            <td>{claim.status}</td>
+                            <td>
+                              <div className="flex justify-center">
+                                <button
+                                  onClick={() => {
+                                    setCurrentClaim(claim);
+                                    console.log('مشاهده مطالبه:', claim.id);
+                                  }}
+                                  className="btn-secondary flex items-center"
+                                >
+                                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                  مشاهده
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-center text-gray-600 py-4">هیچ مطالبه‌ای ثبت نشده است.</p>
+                )}
+              </div>
+            </div>
+
+            {currentClaim && (
+              <div className="modal-backdrop">
+                <div className="modal-content">
+                  <button
+                    onClick={() => {
+                      setCurrentClaim(null);
+                      console.log('مودال بسته شد');
+                    }}
+                    className="close-button"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="border-b pb-4 mb-4">
+                    <h2 className="text-2xl font-semibold text-gray-800 flex items-center">
+                      <svg className="w-6 h-6 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      {currentClaim.customerName}
+                    </h2>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                    <p className="text-gray-700 mb-2"><strong>مبلغ:</strong> {Number(currentClaim.amount).toLocaleString('fa-IR')} ریال</p>
+                    <p className="text-gray-700 mb-2"><strong>سررسید:</strong> {new Date(currentClaim.dueDate).toLocaleDateString('fa-IR')}</p>
+                    <p className="text-gray-700 mb-2"><strong>وضعیت:</strong> {currentClaim.status}</p>
+                    <p className="text-gray-700 mb-2"><strong>تاریخ ثبت:</strong> {currentClaim.createdDate}</p>
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium text-gray-700">کارشناس مسئول</label>
+                      <select
+                        value={currentClaim.expertId || ''}
+                        onChange={(e) => changeExpert(currentClaim.id, e.target.value)}
+                        className="mt-1 w-full p-3 border border-gray-300 rounded-lg"
+                      >
+                        <option value="">انتخاب کنید</option>
+                        {experts.map(expert => (
+                          <option key={expert.id} value={expert.id}>{expert.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className={calculateDelay(currentClaim.dueDate).class}>
+                      <strong>وضعیت سررسید:</strong> {calculateDelay(currentClaim.dueDate).text}
+                    </p>
+                  </div>
+                  {currentClaim.status === 'در حال پیگیری' && (
+                    <div className="mb-4">
+                      <h3 className="text-lg font-semibold mb-2">افزودن یادداشت پیگیری</h3>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const note = e.target.note.value;
+                          if (note) {
+                            addFollowUp(currentClaim.id, { note });
+                            e.target.reset();
+                          } else {
+                            alert('لطفاً یادداشت را وارد کنید.');
+                          }
+                        }}
+                      >
+                        <textarea
+                          name="note"
+                          placeholder="یادداشت پیگیری"
+                          className="w-full p-3 border border-gray-300 rounded-lg mb-2"
+                          rows="4"
+                        ></textarea>
+                        <button type="submit" className="btn-primary">افزودن پیگیری</button>
+                      </form>
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold mb-2">تاریخچه پیگیری‌ها</h3>
+                    {currentClaim.followUps.length > 0 ? (
+                      <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+                        {currentClaim.followUps.map((followUp, index) => (
+                          <div key={index} className="p-3 border-b border-gray-200 last:border-b-0">
+                            <p className="text-gray-700"><strong>تاریخ:</strong> {followUp.date}</p>
+                            <p className="text-gray-700"><strong>یادداشت:</strong> {followUp.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-600">هیچ پیگیری ثبت نشده است.</p>
+                    )}
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700">تغییر وضعیت</label>
+                    <select
+                      value={currentClaim.status}
+                      onChange={(e) => changeStatus(currentClaim.id, e.target.value)}
+                      className="mt-1 w-full p-3 border border-gray-300 rounded-lg"
+                    >
+                      <option value="در حال پیگیری">در حال پیگیری</option>
+                      <option value="معوق">معوق</option>
+                      <option value="سوخت‌شده">سوخت‌شده</option>
+                      <option value="پرداخت‌شده">پرداخت‌شده</option>
+                    </select>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => deleteClaim(currentClaim.id)}
+                      className="btn-cancel flex items-center"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4a1 1 0 011 1v1H9V4a1 1 0 011-1z" />
+                      </svg>
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4">خروجی داده‌ها</h2>
+              <button onClick={exportToCSV} className="btn-primary">دانلود CSV</button>
+            </div>
+
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4 cursor-pointer" onClick={() => setIsExpertsOpen(!isExpertsOpen)}>
+                مدیریت کارشناسان
+              </h2>
+              {isExpertsOpen && (
+                <div>
+                  <form ref={expertFormRef} onSubmit={addExpert} className="mb-4 space-y-2">
+                    <label className="block text-sm">نام کارشناس</label>
+                    <input name="expertName" type="text" required />
+                    <button type="submit" className="btn-primary">افزودن</button>
+                  </form>
+                  {experts.length ? (
+                    experts.map(expert => (
+                      <div key={expert.id} className="flex justify-between p-2 bg-gray-50 rounded mb-2">
+                        <span>{expert.name}</span>
+                        <button className="btn-secondary" disabled>ویرایش</button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-600">هیچ کارشناسی ثبت نشده است.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4">افزودن مطالبه</h2>
+              <form ref={claimFormRef} onSubmit={addClaim} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm">نام مشتری</label>
+                    <input name="customerName" type="text" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm">مبلغ (ریال)</label>
+                    <input name="amount" type="number" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm">تاریخ سررسید</label>
+                    <input name="dueDate" type="date" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm">کارشناس</label>
+                    <select name="expertId" required>
+                      <option value="">انتخاب</option>
+                      {experts.map(expert => (
+                        <option key={expert.id} value={expert.id}>{expert.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" className="btn-primary">افزودن</button>
+              </form>
+            </div>
+          </div>
+        </ErrorBoundary>
+      );
+    };
+
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+      console.log('رندر موفق');
+    } catch (e) {
+      console.error('خطا در رندر:', e);
+      document.getElementById('root').innerHTML = '<div className="error-boundary">خطا در اجرا: ' + e.message + '</div>';
+    }
+  </script>
+</body>
+</html>
